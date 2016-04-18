@@ -11,7 +11,6 @@
 #include "Remote.h"
 #include "Utils.h"
 #include "I2C.h"
-#include "Schedule.h"
 #include "Clock.h"
 
 #define SLAVE_ADDRESS 0x12
@@ -22,39 +21,59 @@ enum Buttons
 	STEERING,
 };
 
+bool debug; //true if Serial is connected then send message through Serial 
 byte pins[REMOTE_NB_CHANNELS];
 uint8_t messageReceived[COM_IN_LENGTH];
 Stampede stampede;
 Remote remote;
-Schedule schedSensors(500);
-Schedule schedMotors(500);
-Clock loopTime(50);
+Clock ClockSensors;
+Clock ClockMotors;
+Clock ClockLoop;
 Clock chronoMotors;
 Clock chronoSensors;
 
-void displayTime(const char* name, unsigned long theTime)
+bool checkSerial(unsigned long baudrate)
 {
-	Serial.print(" Time of ");
-	Serial.print(name);
-	Serial.print(": ");
-	Serial.print(theTime); 
-	Serial.println(" us");
-}	
+
+	bool toggle = HIGH;
+	byte timeout = 10;
+	Serial.begin(baudrate); // start serial port
+	while(timeout)
+	{
+		if(Serial)
+		{
+			return true;
+		}
+		else
+		{
+			timeout--;
+			digitalWrite(LED_BUILTIN, toggle);
+			toggle = !toggle;
+			delay(400);
+		}
+	}
+	Serial.end();
+	return false;
+}
 
 void setup() 
 {  
-	stampede.begin();
+	//Serial communication with computer
+	debug = checkSerial(115200); //Blink led 5 times while ckecking if Serial is opened
+	
+	stampede.begin(debug);
 	i2cBegin(SLAVE_ADDRESS);
 	delay(1000); // wait for ESC
 
+	//Remote
 	pins[THROTTLE] = REMOTE_THROTTLE_PIN;
 	pins[STEERING] = REMOTE_STEERING_PIN;
 	remote.begin(pins, REMOTE_NB_CHANNELS);
 
-	Serial.begin(19200); // start serial port
-	Serial.println("Stampede is Ready! ");
-
-	loopTime.start();
+	//Timing
+	ClockSensors.begin(500);
+	ClockMotors.begin(500);
+	ClockLoop.begin(50);
 }
 
 void loop() 
@@ -63,14 +82,11 @@ void loop()
 	int motorSteering = 0;
 
 	chronoSensors.start();
-	if( schedSensors.isItTime() )
+	if( ClockSensors.isItTime() )
 	{
-		schedSensors.call();
 		//read sensors
 		uint8_t sensors[2];
 		sensors[0] = batteryVoltage(BATTERY, BATTERY_LED);
-		Serial.print("BatteryVoltage: \t\t\t");
-		Serial.println(sensors[0]);
 		sensors[1] = photoCell(LUMINOSITY);	
 
 		//fill message_to_send
@@ -79,7 +95,7 @@ void loop()
 	chronoSensors.stop();
 
 	chronoMotors.start();
-	if( schedMotors.isItTime() )
+	if( ClockMotors.isItTime() )
 	{
 		if( remote.isConnected() )
 		{
@@ -99,15 +115,19 @@ void loop()
 	}
 	chronoMotors.stop();
 
-	//displayTime("Sensors", chronoSensors.elapsedTime());
-	//displayTime("Motors", chronoMotors.elapsedTime());
+	if(debug)
+	{
+		printUnsigned("Sensors", chronoSensors.elapsedTime() );
+		printFloat("Test float", 3.24565);
+		printSigned("Text long", -4525235);
+	}
 
 	//wait Loop Time
 	// if time permits, check if remote is connected
-	if( loopTime.elapsedTime() < 30000 )
+	if( ClockLoop.elapsedTime() < 30000 )
 	{
 		remote.checkIfConnected();
 	}
-	loopTime.wait();
+	ClockLoop.wait();
  
 }
