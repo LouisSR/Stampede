@@ -5,8 +5,6 @@
   Released into the public domain.
 */
 
-#include <Servo.h>
-#include <Wire.h>
 #include "Stampede.h"
 #include "Remote.h"
 #include "Utils.h"
@@ -19,11 +17,12 @@ enum Buttons
 {
 	THROTTLE,
 	STEERING,
+	SWITCH,
 };
 
 bool debug; //true if Serial is connected then send message through Serial 
 byte pins[REMOTE_NB_CHANNELS];
-uint8_t messageReceived[COM_IN_LENGTH];
+byte messageReceived[COM_IN_LENGTH];
 Stampede stampede;
 Remote remote;
 Clock ClockSensors;
@@ -42,6 +41,7 @@ bool checkSerial(unsigned long baudrate)
 	{
 		if(Serial)
 		{
+			Serial.println("Debug mode ");
 			return true;
 		}
 		else
@@ -68,47 +68,92 @@ void setup()
 	//Remote
 	pins[THROTTLE] = REMOTE_THROTTLE_PIN;
 	pins[STEERING] = REMOTE_STEERING_PIN;
-	remote.begin(pins, REMOTE_NB_CHANNELS);
-
+	pins[SWITCH] = REMOTE_SWITCH_PIN;
+	remote.begin(pins, REMOTE_NB_CHANNELS, false);
+	remote.setSwitch(SWITCH);
+	
 	//Timing
-	ClockSensors.begin(500);
-	ClockMotors.begin(500);
-	ClockLoop.begin(50);
+	ClockSensors.begin(1000);
+	ClockMotors.begin(1000);
+	ClockLoop.begin(100);
 }
 
 void loop() 
 {
 	int motorSpeed = 0;
 	int motorSteering = 0;
+	int remoteSpeed = 0;
+	int remoteSteering = 0;
+	byte remoteSwitch = 0;
 
 	chronoSensors.start();
 	if( ClockSensors.isItTime() )
 	{
 		//read sensors
-		uint8_t sensors[2];
-		sensors[0] = batteryVoltage(BATTERY, BATTERY_LED);
-		sensors[1] = photoCell(LUMINOSITY);	
+		byte messageToSend[8];
+		byte index = 0;
+		messageToSend[index++] = batteryVoltage(BATTERY, BATTERY_LED);
+		messageToSend[index++] = photoCell(LUMINOSITY);
+		messageToSend[index++] = remoteSpeed;
+		messageToSend[index++] = remoteSteering;
+		messageToSend[index++] = remoteSwitch;
+		messageToSend[index++] = motorSpeed;
+		messageToSend[index++] = motorSteering;
+		messageToSend[index++] = stampede.getState();
 
-		//fill message_to_send
-		i2cSetMessage(sensors);
+		//fill message to send
+		i2cSetMessage(messageToSend);
 	}
 	chronoSensors.stop();
-
 	chronoMotors.start();
 	if( ClockMotors.isItTime() )
 	{
 		if( remote.isConnected() )
 		{
-			motorSpeed = remote.read(THROTTLE);
-			motorSteering = remote.read(STEERING);
+			remoteSpeed = map(remote.read(THROTTLE), -500, 500, -100, 100);
+			remoteSteering = map(remote.read(STEERING), -500, 500, -100, 100);
+			remoteSwitch = remote.read(SWITCH);
+		}
+		else
+		// if no RC communication, then stop
+		{
+			if(debug)
+			{
+				Serial.println("No Remote");
+			}
+			remoteSpeed = 0;
+			remoteSteering = 0;
+			remoteSwitch = 0;
+		}
+
+		if(remoteSwitch != 0)
+		// remoteSwitch == 0: remote only
+		// remoteSwitch == 1: remote with IMU correction
+		// remoteSwitch == 2: autonomous mode
+		{
+			//check for new messages
+			if( i2cGetMessage(messageReceived) )
+			{
+				//messageReceived is unsigned
+				motorSpeed = int(messageReceived[0]) - 100;
+				motorSteering = int(messageReceived[1]) - 100;
+			}
+
 		}
 		else
 		{
-			//check for new messages
-			i2cGetMessage(messageReceived);
+			motorSpeed = remoteSpeed;
+			motorSteering = remoteSteering;
 		}
 
 		//update command to motors
+		if(debug)
+		{
+		// 	printSigned("Remote Speed", remoteSpeed);
+		// 	printSigned("Motor Speed", motorSpeed);
+		 	printSigned("Remote Steer", remoteSteering);
+			printSigned("Motor Steer", motorSteering);
+		}
 		stampede.setSteer(motorSteering);
 		stampede.setSpeed(motorSpeed);
 		stampede.update();
@@ -117,17 +162,16 @@ void loop()
 
 	if(debug)
 	{
-		printUnsigned("Sensors", chronoSensors.elapsedTime() );
-		printFloat("Test float", 3.24565);
-		printSigned("Text long", -4525235);
+		//printUnsigned("Sensors", chronoSensors.elapsedTime() );
+		//printUnsigned("Motors", chronoMotors.elapsedTime() );
 	}
-
 	//wait Loop Time
 	// if time permits, check if remote is connected
-	if( ClockLoop.elapsedTime() < 30000 )
+	if( ClockLoop.elapsedTime() < 10000 )
 	{
 		remote.checkIfConnected();
 	}
+	
 	ClockLoop.wait();
- 
+
 }
