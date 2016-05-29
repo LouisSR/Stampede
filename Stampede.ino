@@ -73,18 +73,18 @@ void setup()
 	remote.setSwitch(SWITCH);
 	
 	//Timing
-	ClockSensors.begin(1000);
-	ClockMotors.begin(1000);
-	ClockLoop.begin(100);
+	ClockSensors.begin(100);
+	ClockMotors.begin(50);
+	ClockLoop.begin(20);
 }
 
 void loop() 
 {
-	int motorSpeed = 0;
-	int motorSteering = 0;
-	int remoteSpeed = 0;
-	int remoteSteering = 0;
-	byte remoteSwitch = 0;
+	static int motorSpeed = 0;
+	static int motorSteering = 0;
+	static int remoteSpeed = 0;
+	static int remoteSteering = 0;
+	static byte remoteSwitch = 0;
 
 	chronoSensors.start();
 	if( ClockSensors.isItTime() )
@@ -94,11 +94,11 @@ void loop()
 		byte index = 0;
 		messageToSend[index++] = batteryVoltage(BATTERY, BATTERY_LED);
 		messageToSend[index++] = photoCell(LUMINOSITY);
-		messageToSend[index++] = remoteSpeed;
-		messageToSend[index++] = remoteSteering;
+		messageToSend[index++] = remoteSpeed+100;
+		messageToSend[index++] = remoteSteering+100;
 		messageToSend[index++] = remoteSwitch;
-		messageToSend[index++] = motorSpeed;
-		messageToSend[index++] = motorSteering;
+		messageToSend[index++] = motorSpeed+100;
+		messageToSend[index++] = motorSteering+100;
 		messageToSend[index++] = stampede.getState();
 
 		//fill message to send
@@ -151,8 +151,8 @@ void loop()
 		{
 		// 	printSigned("Remote Speed", remoteSpeed);
 		// 	printSigned("Motor Speed", motorSpeed);
-		 	printSigned("Remote Steer", remoteSteering);
-			printSigned("Motor Steer", motorSteering);
+		//	printSigned("Remote Steer", remoteSteering);
+		//	printSigned("Motor Steer", motorSteering);
 		}
 		stampede.setSteer(motorSteering);
 		stampede.setSpeed(motorSpeed);
